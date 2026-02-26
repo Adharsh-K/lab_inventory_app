@@ -1,260 +1,250 @@
-import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
-import '../services/api_service.dart';
+import 'dart:convert';
 import 'dart:io';
-import 'dart:async';
-import 'package:csv/csv.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 
-class HistoryPage extends StatefulWidget {
-  const HistoryPage({super.key});
-
-  @override
-  State<HistoryPage> createState() => _HistoryPageState();
-}
-
-class _HistoryPageState extends State<HistoryPage> {
-  final TextEditingController _searchController = TextEditingController();
-  final ApiService apiService = ApiService();
+class ApiService {
+  // Use your production domain
+  static const String baseUrl = 'https://ilabmec.engineer/api';
   
-  List<dynamic> history = [];
-  bool _isLoading = true;
-  bool _isSearching = false;
-  DateTimeRange? _selectedDateRange;
-  Timer? _debounce;
+  // Static token to persist across different screens during the session
+  static String? _token;
 
-  // Pagination State
-  int _currentPage = 1;
-  int _totalRecords = 0;
-  final int _pageSize = 15; 
-  bool _hasNext = false;
-  bool _hasPrev = false;
+  // ==========================================
+  // 🔑 AUTHENTICATION
+  // ==========================================
 
-  @override
-  void initState() {
-    super.initState();
-    _fetchHistory();
-    _searchController.addListener(_onSearchChanged);
-  }
-
-  @override
-  void dispose() {
-    _searchController.removeListener(_onSearchChanged);
-    _searchController.dispose();
-    _debounce?.cancel();
-    super.dispose();
-  }
-
-  int get _totalPages => (_totalRecords / _pageSize).ceil();
-
-  void _onSearchChanged() {
-    if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(milliseconds: 500), () {
-      _fetchHistory(page: 1); // Reset to page 1 on search
-    });
-  }
-
-  Future<void> _fetchHistory({int page = 1}) async {
-    if (!mounted) return;
-    setState(() => _isLoading = true);
-
+  Future<bool> login(String username, String password) async {
     try {
-      final data = await apiService.getHistory(
-        page: page,
-        startDate: _selectedDateRange?.start,
-        endDate: _selectedDateRange?.end,
-        studentId: _searchController.text.trim().isNotEmpty 
-            ? _searchController.text.trim() 
-            : null,
+      final response = await http.post(
+        Uri.parse('$baseUrl/login/'),
+        body: {
+          'username': username,
+          'password': password,
+        },
       );
 
-      setState(() {
-        history = data['results'] ?? [];
-        _totalRecords = int.tryParse(data['count'].toString()) ?? 0;
-        _hasNext = data['next'] != null;
-        _hasPrev = data['previous'] != null;
-        _currentPage = page;
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: $e")),
-        );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        _token = data['token']; // Save token for subsequent requests
+        return true;
       }
+      print("Login failed: ${response.body}");
+      return false;
+    } catch (e) {
+      print("Login Network Error: $e");
+      return false;
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: _isSearching ? _buildSearchField() : const Text("Issue History"),
-        actions: _buildAppBarActions(),
-      ),
-      body: Column(
-        children: [
-          if (_selectedDateRange != null) _buildFilterChip(),
-          if (!_isLoading) Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Text("Total Records: $_totalRecords", style: TextStyle(color: Colors.grey[600], fontSize: 11)),
-          ),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _buildHistoryList(),
-          ),
-          if (!_isLoading && history.isNotEmpty) _buildPaginationFooter(),
-        ],
-      ),
-    );
+  static void logout() {
+    _token = null;
   }
 
-  // --- UI BUILDER METHODS ---
+  // ==========================================
+  // 📦 REQUESTS & INVENTORY
+  // ==========================================
 
-  Widget _buildSearchField() {
-    return TextField(
-      controller: _searchController,
-      autofocus: true,
-      style: const TextStyle(color: Colors.white),
-      decoration: const InputDecoration(
-        hintText: "Search Name or ID...",
-        border: InputBorder.none,
-        hintStyle: TextStyle(color: Colors.white70),
-      ),
-    );
-  }
+  /// Fetches the list of all requests for the Incharge
+  Future<List<dynamic>> fetchPendingRequests() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/requests/'),
+        headers: _authHeaders,
+      );
 
-  List<Widget> _buildAppBarActions() {
-    return [
-      IconButton(
-        icon: Icon(_isSearching ? Icons.close : Icons.search),
-        onPressed: () {
-          setState(() {
-            _isSearching = !_isSearching;
-            if (!_isSearching) _searchController.clear();
-          });
-        },
-      ),
-      if (!_isSearching)
-        IconButton(
-          icon: const Icon(Icons.date_range),
-          onPressed: () => _selectDateRange(context),
-        ),
-      IconButton(
-        icon: const Icon(Icons.file_download, color: Colors.greenAccent),
-        onPressed: history.isEmpty ? null : _exportToCSV,
-      ),
-    ];
-  }
-
-  Widget _buildFilterChip() {
-    final df = DateFormat('dd MMM yyyy');
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: Chip(
-        label: Text("${df.format(_selectedDateRange!.start)} - ${df.format(_selectedDateRange!.end)}"),
-        onDeleted: () {
-          setState(() => _selectedDateRange = null);
-          _fetchHistory(page: 1);
-        },
-      ),
-    );
-  }
-
-  Widget _buildHistoryList() {
-    if (history.isEmpty) return const Center(child: Text("No records found."));
-    return ListView.builder(
-      itemCount: history.length,
-      itemBuilder: (context, index) {
-        final req = history[index];
-        String dateStr = "N/A";
-        try {
-          if (req['requested_at'] != null) {
-            dateStr = DateFormat('dd MMM').format(DateTime.parse(req['requested_at']));
-          }
-        } catch (e) { dateStr = "Error"; }
-
-        return Card(
-          margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          child: ListTile(
-            leading: CircleAvatar(child: Text(dateStr, style: const TextStyle(fontSize: 10))),
-            title: Text(req['student_name'] ?? "Unknown"),
-            subtitle: Text("ID: ${req['student_id'] ?? 'No ID'} • ${req['status']}"),
-            trailing: const Icon(Icons.chevron_right),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildPaginationFooter() {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.grey[300]!)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          TextButton.icon(
-            onPressed: _hasPrev ? () => _fetchHistory(page: _currentPage - 1) : null,
-            icon: const Icon(Icons.arrow_back_ios, size: 16),
-            label: const Text("Prev"),
-          ),
-          Text("Page $_currentPage of $_totalPages", style: const TextStyle(fontWeight: FontWeight.bold)),
-          TextButton.icon(
-            onPressed: _hasNext ? () => _fetchHistory(page: _currentPage + 1) : null,
-            icon: const Text("Next"),
-            label: const Icon(Icons.arrow_forward_ios, size: 16),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // --- LOGIC METHODS ---
-
-  Future<void> _selectDateRange(BuildContext context) async {
-    final DateTimeRange? picked = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(2025),
-      lastDate: DateTime.now().add(const Duration(days: 1)),
-    );
-    if (picked != null) {
-      setState(() => _selectedDateRange = picked);
-      _fetchHistory(page: 1);
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        print("Fetch Error: ${response.body}");
+        throw Exception('Failed to load requests');
+      }
+    } catch (e) {
+      throw Exception('Network Error: $e');
     }
   }
 
-  Future<void> _exportToCSV() async {
-    // Note: Permission handling might differ slightly on newer Android versions
-    if (await Permission.storage.request().isDenied) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Storage permission required")));
-      return;
+  /// Updates status and sends adjusted quantities to Django
+  Future<void> updateStatus(int id, String status, {Map<int, int>? issuedItems}) async {
+    final String url = '$baseUrl/requests/$id/update/'; 
+    
+    Map<String, int>? formattedItems;
+    if (issuedItems != null) {
+      formattedItems = issuedItems.map((key, value) => MapEntry(key.toString(), value));
     }
-
-    List<List<dynamic>> rows = [
-      ["Request ID", "Date", "Student Name", "Student ID", "Status"]
-    ];
-
-    for (var req in history) {
-      rows.add([req['id'], req['requested_at'], req['student_name'], req['student_id'], req['status']]);
-    }
-
-    String csvData = const ListToCsvConverter().convert(rows);
 
     try {
-      final directory = await getExternalStorageDirectory();
-      final String path = "${directory!.path}/Audit_${DateTime.now().millisecondsSinceEpoch}.csv";
-      final File file = File(path);
-      await file.writeAsString(csvData);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Page saved to: $path")));
+      final response = await http.patch(
+        Uri.parse(url),
+        headers: _authHeaders,
+        body: jsonEncode({
+          "status": status,
+          "issued_items": formattedItems,
+        }),
+      );
+
+      if (response.statusCode != 200) {
+        print("DJANGO ERROR: ${response.body}"); 
+        throw Exception('Server returned ${response.statusCode}');
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Export failed: $e")));
+      print("Update Error: $e");
+      rethrow;
     }
   }
+
+  // ==========================================
+  // 📜 HISTORY & AUDIT
+  // ==========================================
+
+  /// Fetches history with optional date range and Student ID filters
+  /// Fetches history with pagination, date range, and Student ID filters
+  /// Changed return type to Map<String, dynamic> to support pagination metadata
+  Future<Map<String, dynamic>> getHistory({
+  int page = 1,
+  DateTime? startDate,
+  DateTime? endDate,
+  String? studentId,
+}) async {
+  // Use 'page' in the URL - this triggers Django's PageNumberPagination
+  String url = '$baseUrl/history/?page=$page'; 
+
+  if (startDate != null && endDate != null) {
+    url += '&start_date=${DateFormat('yyyy-MM-dd').format(startDate)}';
+    url += '&end_date=${DateFormat('yyyy-MM-dd').format(endDate)}';
+  }
+  if (studentId != null && studentId.trim().isNotEmpty) {
+    url += '&student_id=${studentId.trim()}';
+  }
+
+  try {
+    final response = await http.get(Uri.parse(url), headers: _authHeaders);
+    
+    if (response.statusCode == 200) {
+      final decodedData = jsonDecode(response.body);
+      
+      // If Django isn't paginating, it returns a List. We must return a Map.
+      if (decodedData is List) {
+        return {
+          'count': decodedData.length,
+          'next': null,
+          'previous': null,
+          'results': decodedData
+        };
+      }
+      return decodedData as Map<String, dynamic>;
+    } else {
+      throw Exception("Server Error: ${response.statusCode}");
+    }
+  } catch (e) {
+    rethrow; // Pass it to the HistoryPage debug printer
+  }
+}
+
+  // ==========================================
+  // 🛠️ HELPERS
+  // ==========================================
+
+  /// Helper to provide headers including the Token auth
+  Map<String, String> get _authHeaders => {
+        "Content-Type": "application/json",
+        if (_token != null) "Authorization": "Token $_token",
+      };
+
+  // 1. Fetch all items for the "View Stock" page
+Future<List<dynamic>> fetchAllItems() async {
+  final response = await http.get(
+    Uri.parse('$baseUrl/items/'), 
+    headers: _authHeaders,
+  );
+  if (response.statusCode == 200) {
+    return json.decode(response.body);
+  }
+  throw Exception('Failed to load inventory');
+}
+
+// 2. Post a new component for the "Add Component" page
+Future<bool> addItem(String name, int quantity, String category) async {
+  final response = await http.post(
+    Uri.parse('$baseUrl/items/add/'),
+    headers: _authHeaders,
+    body: jsonEncode({
+      'name': name,
+      'total_quantity': quantity,
+      'category': category,
+    }),
+  );
+  return response.statusCode == 201;
+}
+Future<bool> addComponent({
+  required String name,
+  required int totalQuantity,
+  required int categoryId, // We send the ID, not the name string
+}) async {
+  try {
+    final response = await http.post(
+      Uri.parse('$baseUrl/items/add/'), // Ensure this matches your Django URL
+      headers: _authHeaders,
+      body: jsonEncode({
+        "name": name,
+        "total_quantity": totalQuantity,
+        "available_quantity": totalQuantity, // Initially, they are the same
+        "category": categoryId,
+      }),
+    );
+
+    if (response.statusCode == 201) return true;
+    print("Add Error: ${response.body}");
+    return false;
+  } catch (e) {
+    print("Network Error: $e");
+    return false;
+  }
+}
+// ==========================================
+  // 📂 CATEGORIES
+  // ==========================================
+
+  /// Fetches all available categories for the dropdowns
+  Future<List<dynamic>> fetchCategories() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/categories/'), // Ensure this matches your urls.py
+        headers: _authHeaders,
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        print("Category Fetch Error: ${response.body}");
+        return []; // Return empty list if server fails
+      }
+    } catch (e) {
+      print("Network Error fetching categories: $e");
+      return [];
+    }
+  }
+Future<bool> addCategory(String name) async {
+  try {
+    final response = await http.post(
+      Uri.parse('$baseUrl/categories/add/'),
+      headers: _authHeaders,
+      body: jsonEncode({"name": name}),
+    );
+    return response.statusCode == 201;
+  } catch (e) {
+    print("Error adding category: $e");
+    return false;
+  }
+}
+Future<Map<String, dynamic>> fetchHistory({int page = 1}) async {
+  final response = await http.get(
+    Uri.parse('$baseUrl/history/?page=$page'),
+    headers: _authHeaders,
+  );
+  if (response.statusCode == 200) {
+    return json.decode(response.body);
+  }
+  throw Exception('Failed to load history');
+}
 }
