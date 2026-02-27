@@ -35,7 +35,7 @@ class _InventoryListPageState extends State<InventoryListPage> {
         // --- DYNAMIC CATEGORY EXTRACTION ---
         // We pull unique category names directly from the items list
         final uniqueCats = _allItems
-            .map((item) => item['category'].toString())
+            .map((item) => item['category_name'].toString())
             .toSet() // Removes duplicates
             .toList();
         uniqueCats.sort(); 
@@ -54,7 +54,7 @@ class _InventoryListPageState extends State<InventoryListPage> {
     setState(() {
       _filteredItems = _allItems.where((item) {
         final String itemName = item['name'].toString().toLowerCase();
-        final String itemCat = item['category'].toString();
+        final String itemCat = item['category_name'].toString();
         
         final matchesSearch = itemName.contains(_searchQuery.toLowerCase());
         final matchesCategory = _selectedCategory == "All" || itemCat == _selectedCategory;

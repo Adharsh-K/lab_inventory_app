@@ -73,7 +73,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(item['item_name'] ?? "Item", 
+                              Text(item['component_name'] ?? "Item", 
                                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                               Text(status == 'collected' ? "REM: $rem" : "REQ: $req",
                                   style: TextStyle(color: rem > 0 ? Colors.red : Colors.green, fontWeight: FontWeight.bold)),
