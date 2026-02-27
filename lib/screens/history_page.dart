@@ -32,82 +32,100 @@ class _HistoryPageState extends State<HistoryPage> {
   bool _hasNext = false;
   bool _hasPrev = false;
 
+  /// --- UPDATED MODAL (THE POP-UP) ---
   void _showRequestDetails(Map<String, dynamic> req) {
-  // Extract items (assuming they are nested in the 'items' key from your serializer)
-  final List<dynamic> items = req['items'] ?? [];
+    final List<dynamic> items = req['items'] ?? [];
+    final df = DateFormat('dd MMM yyyy, hh:mm a'); 
 
-  showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-    ),
-    builder: (context) {
-      return DraggableScrollableSheet(
-        initialChildSize: 0.5,
-        minChildSize: 0.3,
-        maxChildSize: 0.9,
-        expand: false,
-        builder: (context, scrollController) {
-          return Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(10),
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.6, 
+          minChildSize: 0.3,
+          maxChildSize: 0.9,
+          expand: false,
+          builder: (context, scrollController) {
+            return Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40, height: 5,
+                      decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10)),
                     ),
                   ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  "Request Details",
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
-                ),
-                Text("Student: ${req['student_name']}", style: TextStyle(color: Colors.grey[600])),
-                const Divider(height: 30),
-                Expanded(
-                  child: items.isEmpty
-                      ? const Center(child: Text("No items found in this request"))
-                      : ListView.separated(
-                          controller: scrollController,
-                          itemCount: items.length,
-                          separatorBuilder: (_, __) => const Divider(),
-                          itemBuilder: (context, index) {
-                            final item = items[index];
-                            return ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              title: Text(item['component_name'] ?? "Unknown Item", 
-                                style: const TextStyle(fontWeight: FontWeight.w600)),
-                              subtitle: Text("Category: ${item['category_name'] ?? 'General'}"),
-                              trailing: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Text("Qty: ${item['quantity']}", 
-                                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.teal)),
-                                  if (item['issued_quantity'] != null)
-                                    Text("Issued: ${item['issued_quantity']}", 
-                                      style: const TextStyle(fontSize: 11, color: Colors.blueGrey)),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                ),
-              ],
-            ),
-          );
-        },
-      );
-    },
-  );
-}
+                  const SizedBox(height: 20),
+                  Text("Request Summary", style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
+                  
+                  // --- DATE SECTION (Must match Django Serializer keys) ---
+                  _buildDetailRow(Icons.person, "Student", req['student_name'] ?? "Unknown"),
+                  _buildDetailRow(Icons.calendar_today, "Requested", _formatDate(req['requested_at'], df)),
+                  _buildDetailRow(Icons.assignment_turned_in, "Collected", _formatDate(req['collected_at'], df)),
+                  _buildDetailRow(Icons.assignment_return, "Returned", _formatDate(req['return_date'], df)),
+                  
+                  const Divider(height: 30),
+                  Text("Items Requested", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey[700])),
+                  const SizedBox(height: 10),
+                  
+                  Expanded(
+                    child: items.isEmpty
+                        ? const Center(child: Text("No items found"))
+                        : ListView.separated(
+                            controller: scrollController,
+                            itemCount: items.length,
+                            separatorBuilder: (_, _) => const Divider(),
+                            itemBuilder: (context, index) {
+                              final item = items[index];
+                              return ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(item['component_name'] ?? "Unknown Item", style: const TextStyle(fontWeight: FontWeight.w600)),
+                                subtitle: Text("Category: ${item['category_name'] ?? 'General'}"),
+                                trailing: Text("Qty: ${item['quantity']}", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.teal)),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // Helper widget for Modal rows
+  Widget _buildDetailRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: Colors.teal),
+          const SizedBox(width: 8),
+          Text("$label: ", style: const TextStyle(fontWeight: FontWeight.bold)),
+          Expanded(child: Text(value, style: TextStyle(color: Colors.grey[800]))),
+        ],
+      ),
+    );
+  }
+
+  // Helper to handle null dates safely
+  String _formatDate(String? rawDate, DateFormat df) {
+    if (rawDate == null || rawDate.isEmpty) return "Pending";
+    try {
+      return df.format(DateTime.parse(rawDate));
+    } catch (e) {
+      return "N/A";
+    }
+  }
 
   @override
   void initState() {
@@ -134,6 +152,7 @@ class _HistoryPageState extends State<HistoryPage> {
     });
   }
 
+  /// --- UPDATED FETCH (With safe debug logging) ---
   Future<void> _fetchHistory({int page = 1}) async {
     if (!mounted) return;
     setState(() => _isLoading = true);
@@ -148,12 +167,16 @@ class _HistoryPageState extends State<HistoryPage> {
             : null,
       );
 
-      debugPrint("DEBUG: API Response Keys: ${data.keys}");
-      
       if (!mounted) return;
 
       setState(() {
         history = data['results'] as List<dynamic>? ?? [];
+        
+        // SAFE DEBUG: Only prints if history actually has data
+        if (history.isNotEmpty) {
+          debugPrint("DEBUG: First item full data: ${history[0]}");
+        }
+
         _totalRecords = int.tryParse(data['count'].toString()) ?? 0;
         _hasNext = data['next'] != null;
         _hasPrev = data['previous'] != null;
@@ -161,7 +184,6 @@ class _HistoryPageState extends State<HistoryPage> {
         _isLoading = false;
       });
 
-      // Reset scroll position to top when page changes
       if (_scrollController.hasClients) {
         _scrollController.animateTo(0, 
           duration: const Duration(milliseconds: 300), 
@@ -271,6 +293,7 @@ class _HistoryPageState extends State<HistoryPage> {
     );
   }
 
+  /// --- UPDATED LIST BUILDER (Removed crash-causing debug) ---
   Widget _buildHistoryList() {
     if (history.isEmpty) {
       return Center(

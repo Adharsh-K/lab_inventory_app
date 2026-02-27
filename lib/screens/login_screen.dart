@@ -48,7 +48,11 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.lock_person, size: 80, color: Colors.blueGrey),
+              Image.asset(
+      '../../assets/logo/logo.png',
+      height: 120, // Match the landing page scale
+      fit: BoxFit.contain,
+    ),
               SizedBox(height: 20),
               Text("MEC IdeaLab", style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
               Text("Incharge Portal", style: TextStyle(color: Colors.grey[600])),

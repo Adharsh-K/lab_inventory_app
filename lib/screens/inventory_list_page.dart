@@ -103,7 +103,7 @@ Padding(
         child: SizedBox(
           height: 45,
           child: DropdownButtonFormField<String>(
-            value: _selectedCategory,
+            initialValue: _selectedCategory,
             isExpanded: true, // IMPORTANT: Prevents the dropdown from overflowing internally
             decoration: InputDecoration(
               contentPadding: const EdgeInsets.symmetric(horizontal: 10),

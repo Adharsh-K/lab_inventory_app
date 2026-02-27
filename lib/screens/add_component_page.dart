@@ -32,13 +32,13 @@ class _AddComponentPageState extends State<AddComponentPage> {
 
   // Popup dialog to add a new category string to the DB
   void _showAddCategoryDialog() {
-    final TextEditingController _catController = TextEditingController();
+    final TextEditingController catController = TextEditingController();
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text("New Category"),
         content: TextField(
-          controller: _catController,
+          controller: catController,
           decoration: const InputDecoration(hintText: "e.g. Sensors, Tools"),
           autofocus: true,
         ),
@@ -49,8 +49,8 @@ class _AddComponentPageState extends State<AddComponentPage> {
           ),
           ElevatedButton(
             onPressed: () async {
-              if (_catController.text.trim().isNotEmpty) {
-                final success = await _apiService.addCategory(_catController.text.trim());
+              if (catController.text.trim().isNotEmpty) {
+                final success = await _apiService.addCategory(catController.text.trim());
                 if (success) {
                   Navigator.pop(context); // Close dialog
                   _loadCategories(); // Refresh dropdown list
@@ -126,7 +126,7 @@ class _AddComponentPageState extends State<AddComponentPage> {
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<int>(
-                      value: _selectedCategoryId,
+                      initialValue: _selectedCategoryId,
                       isExpanded: true,
                       decoration: const InputDecoration(
                         labelText: "Category",
